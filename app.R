@@ -1,4 +1,6 @@
 # parkrun, access, equity
+# Paul Schneider
+# October 2018
 # version 1.0
 
 # install and/or load required packages
@@ -14,18 +16,14 @@ required_packages<-c("ggplot2","cowplot","shiny","leaflet")
 install_n_load(required_packages)
 
 # load data
-centroid_lsoa = read.csv("./centroids.csv")
-data = raster::shapefile("./data")
-parkrun_marker = raster::shapefile("./marker")
-vars1 <- c("Absolute" = "absolute","Relative (UNSTABLE!)" = "relative")   
+data = raster::shapefile("./polygons")
+parkrun_marker = raster::shapefile("./marker_england")
 
 # ##   User-interface   #  ### #### ### #  ### #### ### #  
 ui <- fluidPage(
   
     sidebarPanel(
       h4("parkrun, access, equity"),
-      # color scaling adjuster
-      selectInput("color", "Scaling", vars1),
       # plot bivariate relationships
       plotOutput("p1_dist", height = 400),
       width = 3
@@ -99,6 +97,121 @@ server <- function(input, output) {
   })
   
   
+  
+  
+    data_select = data
+    # Color palete functions
+    q_dists = as.numeric(quantile(data_select$mn_dstn,probs = c(seq(0,1,by=0.2))))
+    pal_dist <- colorBin("RdYlGn", domain = data_select$mn_dstn, bins = q_dists,reverse =T)
+    q_imd_a = as.numeric(quantile(data_select$a,probs = c(seq(0,1,by=0.2))))
+    pal_imd_a <- colorBin("RdYlGn", domain = data_select$a, bins = q_imd_a,reverse = T)
+    q_dens = as.numeric(quantile(data_select$pp_dnst,probs = c(seq(0,1,by=0.2))))
+    pal_dens <- colorBin("RdYlGn", domain = data_select$pp_dnst, bins = q_dens,reverse = T)
+    
+    
+    # UPDATE BASE MAP
+    leafletProxy("mymap") %>%
+        # control layers (add/remove)
+        addLayersControl(
+          baseGroups = c("Carto Map","Toner Map","OSM Map"),
+          overlayGroups = c("Event","Distance"),
+          options = layersControlOptions(collapsed = T,autoZIndex=T)
+        ) %>%
+      # ADD PARKRUN EVENT MARKERS
+      addCircleMarkers(
+        group = "Event",
+        data = parkrun_marker,
+        radius = 5,
+        fillColor = "blue",
+        stroke = FALSE, fillOpacity = 0.9,
+        popup = paste("Course:",parkrun_marker$Club,"<br>",
+                      "Established:", parkrun_marker$Estblsh,"<br>",
+                      "Age in years:", parkrun_marker$Age_yrs,"<br>",
+                      "Mean participants:", round(parkrun_marker$Mn_prtc),"<br>",
+                      "Mean volunteers:", round(parkrun_marker$Mn_vlnt),"<br>")
+      ) %>% 
+        # ADD POLYGON LAYERS
+        # layer 1
+        addPolygons(data = data_select, group = "Distance",
+                    color = "gray", smoothFactor = 0,stroke = T,
+                    opacity = 0.5,weight = 0.1, 
+                    fillOpacity = 0.5,
+                    fillColor = ~pal_dist(mn_dstn),
+                    highlight = highlightOptions(
+                      weight = 1,
+                      color = "cyan",
+                      opacity = 1,
+                      bringToFront = FALSE,
+                      sendToBack = TRUE),
+                    popup = paste(data_select$name,"<br>",
+                                  "Nearest event:", data_select$nrst_vn,"<br>",
+                                  "Distance: ",data_select$mn_dstn," km <br>",
+                                  "SIMD score:", data_select$a,"<br>",
+                                  "Pop density:", data_select$pp_dnst,"<br>",
+                                  "Population:", data_select$pop)
+        ) %>%
+    #     # layer 2
+    #     addPolygons(data = data_select, group = "Density",
+    #                 color = "gray", smoothFactor = 0,stroke = T,
+    #                 opacity = 0.5,weight = 0.1, 
+    #                 fillOpacity = 0.5,
+    #                 fillColor = ~pal_dens(pp_dnst),
+    #                 highlight = highlightOptions(
+    #                   weight = 1,
+    #                   color = "cyan",
+    #                   opacity = 1,
+    #                   bringToFront = FALSE,
+    #                   sendToBack = TRUE),
+    #                 popup = paste(data_select$name,"<br>",
+    #                               "Nearest event:", data_select$nrst_vn,"<br>",
+    #                               "Distance: ",data_select$mn_dstn," km <br>",
+    #                               "SIMD score:", data_select$a,"<br>",
+    #                               "Pop density:", data_select$pp_dnst,"<br>",
+    #                               "Population:", data_select$pop)
+    #     ) %>%
+    #     # layer 3
+    #     addPolygons(data = data_select, group = "IMD",
+    #                 color = "gray", smoothFactor = 0,stroke = T,
+    #                 opacity = 0.5,weight = 0.1, 
+    #                 fillOpacity = 0.5,
+    #                 fillColor = ~pal_imd_a(a),
+    #                 highlight = highlightOptions(
+    #                   weight = 1,
+    #                   color = "cyan",
+    #                   opacity = 1,
+    #                   bringToFront = FALSE,
+    #                   sendToBack = TRUE),
+    #                 popup = paste(data_select$name,"<br>",
+    #                               "Nearest event:", data_select$nrst_vn,"<br>",
+    #                               "Distance: ",data_select$mn_dstn," km <br>",
+    #                               "SIMD score:", data_select$a,"<br>",
+    #                               "Pop density:", data_select$pp_dnst,"<br>",
+    #                               "Population:", data_select$pop)
+    #     ) %>%
+        # ADD LEGENDS
+        # legend 1
+        addLegend("bottomleft", pal = pal_dist, values = data_select$mn_dstn,
+                  opacity = 0.7, title="Distance quintiles",group = "Distance",
+                  labFormat = labelFormat(
+                    suffix  = "km")
+        ) 
+    # %>%
+        # # legend 2
+        # addLegend("bottomleft", pal = pal_imd_a, values = data_select$a,
+        #           opacity = 0.7, title="Deprivation quintiles",group = "IMD"
+        # ) %>% 
+        # # legend 3
+        # addLegend("bottomleft", pal = pal_dens, values = data_select$pp_dnst,
+        #           opacity = 0.7, title="Density quintiles",group = "Density",
+        #           labFormat = labelFormat(
+        #             suffix  = "km")
+        # ) %>%
+        # # hide groups after init
+        # hideGroup("IMD") %>% 
+        # hideGroup("Distance") %>% 
+        # hideGroup("Density")
+        # 
+    
   
   
 } # end of server
